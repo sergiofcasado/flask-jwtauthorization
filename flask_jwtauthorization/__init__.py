@@ -1,5 +1,4 @@
 # Copyright (C) 2017, CERN
-
 # This software is distributed under the terms of the GNU General Public
 # Licence version 3 (GPL Version 3), copied verbatim in the file "LICENSE".
 
@@ -7,21 +6,50 @@
 # granted to it by virtue of its status as Intergovernmental Organization
 # or submit itself to any jurisdiction.
 
-from flask import request
+
+from flask import request, current_app, g
 from functools import wraps
 import jwt
 
 
-def jwt_authorize(auth_func = None, auth_cls = None, **kwauth_args):
+def jwt_authorize(**auth_kwargs):
+    """
+    This is the decorator to apply to each route you want to protect.
+    If you use default parameters, it try to execute a method called
+    auth_<verb> within the first parameter passed. This is useful if
+    you are using a library like Flask-RESTful.
+    In any case, you can specify a class and/or a function to handle
+    the authorization.
+    You can also pass any additional parameter to the auth function.
+    In case of name collision, these parameters will overwrite any
+    other defined with the same name in the decorated function.
+
+    :param auth_func:
+        asdasdsdasad
+
+        Default: None
+    :type auth_func: callable
+
+    :param auth_cls:
+        asdasdads
+
+        Default: None
+    :type auth_cls: object
+    """
     def wrapper(fn):
         @wraps(fn)
         def decorator(*args, **kwargs):
             token = _token_extractor()
-            login = _login_decode(token)
+            user = _user_decode(token)
+            g.setdefault('user', user)
+            auth_func = auth_kwargs.get('auth_func', None)
+            auth_cls = auth_kwargs.get('auth_cls', None)
             callback = _get_authorization_callback(auth_func, auth_cls, args)
-            # Flask_restful params take preference to jwt_authorize params in case of name collision. or is it better to do the opposite?
-            kwauth_args.update(kwargs)
-            _check_authorization(login, callback, **kwauth_args)
+            # jwt_authorize params take preference to Flask route params in case of name collision.
+            auth_kwargs.pop('auth_func', None)
+            auth_kwargs.pop('auth_cls', None)
+            kwargs.update(auth_kwargs)
+            _check_authorization(user, callback, **kwargs)
             return fn(*args, **kwargs)
         return decorator
     return wrapper
@@ -29,14 +57,14 @@ def jwt_authorize(auth_func = None, auth_cls = None, **kwauth_args):
 
 def _token_extractor():
     auth_header_value = request.headers.get('Authorization', None)
-    auth_header_prefix = "JWT"
+    auth_bearer_prefix = current_app.config.get('JWTAUTH_BEARER_PREFIX', 'JWT')
 
     if not auth_header_value:
         return
 
     parts = auth_header_value.split()
 
-    if parts[0].lower() != auth_header_prefix.lower():
+    if parts[0].lower() != auth_bearer_prefix.lower():
         raise JWTAuthorizationError('Invalid JWT header', 'Unsupported authorization type')
     elif len(parts) == 1:
         raise JWTAuthorizationError('Invalid JWT header', 'Token missing')
@@ -49,20 +77,22 @@ def _token_extractor():
     return parts[1]
 
 
-def _login_decode(token):
+def _user_decode(token):
     try:
-        login = jwt.decode(token, 'secret')['login']
+        secret = current_app.config.get('JWTAUTH_SECRET', current_app.config.get('SECRET_KEY'))
+        user_field = current_app.config.get('JWTAUTH_USER_FIELD', 'login')
+        user = jwt.decode(token, secret)[user_field]
     except jwt.InvalidTokenError as e:
         raise JWTAuthorizationError('Invalid JWT', str(e))
     except KeyError:
-        raise JWTAuthorizationError('Invalid JWT', 'login parameter does not exist')
+        raise JWTAuthorizationError('Invalid JWT', user_field + ' parameter does not exist')
 
-    return login
+    return user
 
 
 def _get_authorization_callback(auth_func, auth_cls, args):
     if auth_func != None:
-        if callable(auth_func):
+        if not callable(auth_func):
             raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
         return auth_func
     else:
@@ -82,9 +112,10 @@ def _get_authorization_callback(auth_func, auth_cls, args):
             raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
 
 
-def _check_authorization(login, auth_func, **kwargs):
+def _check_authorization(user, auth_func, **kwargs):
     auth_list = auth_func(**kwargs)
-    if login in auth_list:
+    auth_list.extend(current_app.config.get('JWTAUTH_API_ADMINS', []))
+    if user in auth_list:
         return
     raise JWTAuthorizationError('JWT Authorization', 'User is not authorized to access this endpoint')
 
