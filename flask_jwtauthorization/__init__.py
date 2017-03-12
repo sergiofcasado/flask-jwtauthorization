@@ -7,9 +7,10 @@
 # or submit itself to any jurisdiction.
 
 
-from flask import request, current_app, g
 from functools import wraps
+
 import jwt
+from flask import request, current_app, g
 
 
 def jwt_authorize(**auth_kwargs):
@@ -42,12 +43,10 @@ def jwt_authorize(**auth_kwargs):
             token = _token_extractor()
             user = _user_decode(token)
             g.setdefault('user', user)
-            auth_func = auth_kwargs.get('auth_func', None)
-            auth_cls = auth_kwargs.get('auth_cls', None)
+            auth_func = auth_kwargs.pop('auth_func', None)
+            auth_cls = auth_kwargs.pop('auth_cls', None)
             callback = _get_authorization_callback(auth_func, auth_cls, args)
             # jwt_authorize params take preference to Flask route params in case of name collision.
-            auth_kwargs.pop('auth_func', None)
-            auth_kwargs.pop('auth_cls', None)
             kwargs.update(auth_kwargs)
             _check_authorization(user, callback, **kwargs)
             return fn(*args, **kwargs)
@@ -56,14 +55,20 @@ def jwt_authorize(**auth_kwargs):
 
 
 def _token_extractor():
+    """
+    Retrieves the token from the headers.
+    There should be an Authorization header with the following format:
+
+        Authorization: <prefix> JWT_TOKEN
+
+    Where <prefix> should be configured in JWTAUTH_BEARER_PREFIX configuration key. It defaults to 'JWT'.
+    """
     auth_header_value = request.headers.get('Authorization', None)
     auth_bearer_prefix = current_app.config.get('JWTAUTH_BEARER_PREFIX', 'JWT')
-
     if not auth_header_value:
         return
 
     parts = auth_header_value.split()
-
     if parts[0].lower() != auth_bearer_prefix.lower():
         raise JWTAuthorizationError('Invalid JWT header', 'Unsupported authorization type')
     elif len(parts) == 1:
@@ -78,6 +83,14 @@ def _token_extractor():
 
 
 def _user_decode(token):
+    """
+    Retrieves the authenticated user from the payload.
+
+    Secret is taken from configuration key JWTAUTH_SECRET or SECRET_KEY, in that order.
+
+    To specify where to retrieve user name, use JWTAUTH_USER_FIELD.
+    """
+    print(token)
     try:
         secret = current_app.config.get('JWTAUTH_SECRET', current_app.config.get('SECRET_KEY'))
         user_field = current_app.config.get('JWTAUTH_USER_FIELD', 'login')
@@ -91,6 +104,11 @@ def _user_decode(token):
 
 
 def _get_authorization_callback(auth_func, auth_cls, args):
+    """
+    This function sets the callback function where effective user authorization is done.
+
+    TODO complete this help when we have decided the options offered.
+    """
     if auth_func != None:
         if not callable(auth_func):
             raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
@@ -113,6 +131,11 @@ def _get_authorization_callback(auth_func, auth_cls, args):
 
 
 def _check_authorization(user, auth_func, **kwargs):
+    """
+    It calls the authorization function to retrieve the list of authorized users. Then it appends
+    admin users so they are always authorized to use full API. This is defined as a list of users
+    in configuration key JWTAUTH_API_ADMINS.
+    """
     auth_list = auth_func(**kwargs)
     auth_list.extend(current_app.config.get('JWTAUTH_API_ADMINS', []))
     if user in auth_list:
