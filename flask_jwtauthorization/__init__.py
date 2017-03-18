@@ -90,7 +90,6 @@ def _user_decode(token):
 
     To specify where to retrieve user name, use JWTAUTH_USER_FIELD.
     """
-    print(token)
     try:
         secret = current_app.config.get('JWTAUTH_SECRET', current_app.config.get('SECRET_KEY'))
         user_field = current_app.config.get('JWTAUTH_USER_FIELD', 'login')
