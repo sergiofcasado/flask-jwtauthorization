@@ -51,9 +51,7 @@ def jwt_authorize(**auth_kwargs):
             kwargs.update(auth_kwargs)
             _check_authorization(user, callback, **kwargs)
             return fn(*args, **kwargs)
-
         return decorator
-
     return wrapper
 
 
