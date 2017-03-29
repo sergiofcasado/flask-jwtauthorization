@@ -10,7 +10,7 @@
 from functools import wraps
 
 import jwt
-from flask import request, current_app, g
+from flask import request, current_app, g, abort
 
 
 def jwt_authorize(**auth_kwargs):
@@ -37,6 +37,7 @@ def jwt_authorize(**auth_kwargs):
         Default: None
     :type auth_cls: object
     """
+
     def wrapper(fn):
         @wraps(fn)
         def decorator(*args, **kwargs):
@@ -67,18 +68,15 @@ def _token_extractor():
     auth_bearer_prefix = current_app.config.get('JWTAUTH_BEARER_PREFIX', 'JWT')
     if not auth_header_value:
         return
-
     parts = auth_header_value.split()
     if parts[0].lower() != auth_bearer_prefix.lower():
-        raise JWTAuthorizationError('Invalid JWT header', 'Unsupported authorization type')
+        abort(400, 'Invalid JWT header: Unsupported authorization type')
     elif len(parts) == 1:
-        raise JWTAuthorizationError('Invalid JWT header', 'Token missing')
+        abort(400, 'Invalid JWT header: Token missing')
     elif len(parts) > 2:
-        raise JWTAuthorizationError('Invalid JWT header', 'Token contains spaces')
-
-    if parts[0] is None:
-        raise JWTAuthorizationError('Authorization required', 'Request does not contain an access token')
-
+        abort(400, 'Invalid JWT header: Token contains spaces')
+    if not parts[0]:
+        abort(400, 'Authorization required: Request does not contain an access token')
     return parts[1]
 
 
@@ -95,10 +93,9 @@ def _user_decode(token):
         user_field = current_app.config.get('JWTAUTH_USER_FIELD', 'login')
         user = jwt.decode(token, secret)[user_field]
     except jwt.InvalidTokenError as e:
-        raise JWTAuthorizationError('Invalid JWT', str(e))
+        abort(400, ('Invalid JWT', e))
     except KeyError:
-        raise JWTAuthorizationError('Invalid JWT', user_field + ' parameter does not exist')
-
+        abort(400, ('Invalid JWT', user_field + ' parameter does not exist'))
     return user
 
 
@@ -108,25 +105,25 @@ def _get_authorization_callback(auth_func, auth_cls, args):
 
     TODO complete this help when we have decided the options offered.
     """
-    if auth_func != None:
+    if auth_func is not None:
         if not callable(auth_func):
-            raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
+            abort(500, 'JWT Authorization: No valid authorization callback function provided')
         return auth_func
     else:
         method = 'auth_{0}'.format(request.method.lower())
-        if auth_cls != None:
+        if auth_cls is not None:
             instance = auth_cls()
         else:
             # If no method/class has been passed, maybe first argument is the instance of the same class
             try:
                 instance = args[0]
             except IndexError:
-                raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
+                abort(500, 'JWT Authorization: No valid authorization callback function provided')
         try:
             callback = getattr(instance, method)
             return callback
         except AttributeError:
-            raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
+            abort(500, 'JWT Authorization: No valid authorization callback function provided')
 
 
 def _check_authorization(user, auth_func, **kwargs):
@@ -139,21 +136,4 @@ def _check_authorization(user, auth_func, **kwargs):
     auth_list.extend(current_app.config.get('JWTAUTH_API_ADMINS', []))
     if user in auth_list:
         return
-    raise JWTAuthorizationError('JWT Authorization', 'User is not authorized to access this endpoint')
-
-
-
-class JWTAuthorizationError(Exception):
-    def __init__(self, error, description, status_code=403, headers=None):
-        self.error = error
-        self.description = description
-        self.status_code = status_code
-        self.headers = headers
-
-
-    def __repr__(self):
-        return 'JWT Authorization Error: %s' % self.error
-
-
-    def __str__(self):
-        return '%s. %s' % (self.error, self.description)
+    abort(403, 'JWT Authorization: User is not authorized to access this endpoint')
