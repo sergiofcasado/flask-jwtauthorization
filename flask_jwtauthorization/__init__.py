@@ -105,13 +105,13 @@ def _get_authorization_callback(auth_func, auth_cls, args):
 
     TODO complete this help when we have decided the options offered.
     """
-    if auth_func:
+    if auth_func is not None:
         if not callable(auth_func):
             abort(500, 'JWT Authorization: No valid authorization callback function provided')
         return auth_func
     else:
         method = 'auth_{0}'.format(request.method.lower())
-        if auth_cls:
+        if auth_cls is not None:
             instance = auth_cls()
         else:
             # If no method/class has been passed, maybe first argument is the instance of the same class
