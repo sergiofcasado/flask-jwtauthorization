@@ -37,6 +37,7 @@ def jwt_authorize(**auth_kwargs):
         Default: None
     :type auth_cls: object
     """
+
     def wrapper(fn):
         @wraps(fn)
         def decorator(*args, **kwargs):
@@ -50,7 +51,9 @@ def jwt_authorize(**auth_kwargs):
             kwargs.update(auth_kwargs)
             _check_authorization(user, callback, **kwargs)
             return fn(*args, **kwargs)
+
         return decorator
+
     return wrapper
 
 
@@ -68,18 +71,15 @@ def _token_extractor():
     if not auth_header_value:
         return
     parts = auth_header_value.split()
-    try:
-        if parts[0].lower() != auth_bearer_prefix.lower():
-            raise JWTAuthorizationError('Invalid JWT header', 'Unsupported authorization type')
-        elif len(parts) == 1:
-            raise JWTAuthorizationError('Invalid JWT header', 'Token missing')
-        elif len(parts) > 2:
-            raise JWTAuthorizationError('Invalid JWT header', 'Token contains spaces')
-        if not parts[0]:
-            raise JWTAuthorizationError('Authorization required', 'Request does not contain an access token')
-        return parts[1]
-    except JWTAuthorizationError as e:
-        abort(400, e)
+    if parts[0].lower() != auth_bearer_prefix.lower():
+        abort(400, 'Invalid JWT header: Unsupported authorization type')
+    elif len(parts) == 1:
+        abort(400, 'Invalid JWT header: Token missing')
+    elif len(parts) > 2:
+        abort(400, 'Invalid JWT header: Token contains spaces')
+    if not parts[0]:
+        abort(400, 'Authorization required: Request does not contain an access token')
+    return parts[1]
 
 
 def _user_decode(token):
@@ -91,17 +91,14 @@ def _user_decode(token):
     To specify where to retrieve user name, use JWTAUTH_USER_FIELD.
     """
     try:
-        try:
-            secret = current_app.config.get('JWTAUTH_SECRET', current_app.config.get('SECRET_KEY'))
-            user_field = current_app.config.get('JWTAUTH_USER_FIELD', 'login')
-            user = jwt.decode(token, secret)[user_field]
-        except jwt.InvalidTokenError as e:
-            raise JWTAuthorizationError('Invalid JWT', str(e))
-        except KeyError:
-            raise JWTAuthorizationError('Invalid JWT', user_field + ' parameter does not exist')
-        return user
-    except JWTAuthorizationError as e:
-        abort(400, e)
+        secret = current_app.config.get('JWTAUTH_SECRET', current_app.config.get('SECRET_KEY'))
+        user_field = current_app.config.get('JWTAUTH_USER_FIELD', 'login')
+        user = jwt.decode(token, secret)[user_field]
+    except jwt.InvalidTokenError as e:
+        abort(400, ('Invalid JWT', e))
+    except KeyError:
+        abort(400, ('Invalid JWT', user_field + ' parameter does not exist'))
+    return user
 
 
 def _get_authorization_callback(auth_func, auth_cls, args):
@@ -110,28 +107,25 @@ def _get_authorization_callback(auth_func, auth_cls, args):
 
     TODO complete this help when we have decided the options offered.
     """
-    try:
-        if auth_func:
-            if not callable(auth_func):
-                raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
-            return auth_func
+    if auth_func:
+        if not callable(auth_func):
+            abort(500, 'JWT Authorization: No valid authorization callback function provided')
+        return auth_func
+    else:
+        method = 'auth_{0}'.format(request.method.lower())
+        if auth_cls:
+            instance = auth_cls()
         else:
-            method = 'auth_{0}'.format(request.method.lower())
-            if auth_cls:
-                instance = auth_cls()
-            else:
-                # If no method/class has been passed, maybe first argument is the instance of the same class
-                try:
-                    instance = args[0]
-                except IndexError:
-                    raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
+            # If no method/class has been passed, maybe first argument is the instance of the same class
             try:
-                callback = getattr(instance, method)
-                return callback
-            except AttributeError:
-                raise JWTAuthorizationError('JWT Authorization', 'No valid authorization callback function provided')
-    except JWTAuthorizationError as e:
-        abort(500, e)
+                instance = args[0]
+            except IndexError:
+                abort(500, 'JWT Authorization: No valid authorization callback function provided')
+        try:
+            callback = getattr(instance, method)
+            return callback
+        except AttributeError:
+            abort(500, 'JWT Authorization: No valid authorization callback function provided')
 
 
 def _check_authorization(user, auth_func, **kwargs):
@@ -140,14 +134,11 @@ def _check_authorization(user, auth_func, **kwargs):
     admin users so they are always authorized to use full API. This is defined as a list of users
     in configuration key JWTAUTH_API_ADMINS.
     """
-    try:
-        auth_list = auth_func(**kwargs)
-        auth_list.extend(current_app.config.get('JWTAUTH_API_ADMINS', []))
-        if user in auth_list:
-            return
-        raise JWTAuthorizationError('JWT Authorization', 'User is not authorized to access this endpoint')
-    except JWTAuthorizationError as e:
-        abort(401, e)
+    auth_list = auth_func(**kwargs)
+    auth_list.extend(current_app.config.get('JWTAUTH_API_ADMINS', []))
+    if user in auth_list:
+        return
+    abort(403, 'JWT Authorization: User is not authorized to access this endpoint')
 
 
 class JWTAuthorizationError(Exception):
