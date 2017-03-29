@@ -137,17 +137,3 @@ def _check_authorization(user, auth_func, **kwargs):
     if user in auth_list:
         return
     abort(403, 'JWT Authorization: User is not authorized to access this endpoint')
-
-
-class JWTAuthorizationError(Exception):
-    def __init__(self, error, description, status_code=403, headers=None):
-        self.error = error
-        self.description = description
-        self.status_code = status_code
-        self.headers = headers
-
-    def __repr__(self):
-        return 'JWT Authorization Error: %s' % self.error
-
-    def __str__(self):
-        return '%s. %s' % (self.error, self.description)
