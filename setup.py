@@ -6,7 +6,7 @@ Adds JWT Authorization framework to your Flask application.
 Links
 `````
 
-* `Documentation <>`_
+* `Documentation <https://github.com/sergiofcasado/flask-jwtauthorization/wiki>`_
 * `Issue Tracker <https://github.com/sergiofcasado/flask-jwtauthorization/issues>`_
 * `Source <https://github.com/sergiofcasado/flask-jwtauthorization>`_
 """
@@ -23,7 +23,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='Flask-JWTAuthorization',
-    version='0.0.3',
+    version='0.0.4',
     description='Authorization framework based on JWT for Flask applications',
     long_description=long_description,
     url='https://github.com/sergiofcasado/flask-jwtauthorization',
